@@ -18,6 +18,7 @@ import html
 import logging
 import os
 import re
+import secrets
 import signal
 import time
 from dataclasses import dataclass
@@ -119,6 +120,7 @@ class Config:
     webhook_secret: str | None
     port: int
     log_level: str
+    webhook_secret_generated: bool = False
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -144,10 +146,29 @@ class Config:
         except ValueError as exc:
             raise SystemExit(f"ALLOWED_CHAT_IDS must be numeric: {exc}") from exc
 
-        webhook = os.environ.get("WEBHOOK_URL", "").strip().rstrip("/")
+        # Render exposes the public URL as RENDER_EXTERNAL_URL, so a blueprint
+        # deploy needs no extra wiring; WEBHOOK_URL still wins when set.
+        webhook = (
+            os.environ.get("WEBHOOK_URL", "").strip()
+            or os.environ.get("RENDER_EXTERNAL_URL", "").strip()
+        ).rstrip("/")
         if webhook and not webhook.startswith(("https://", "http://")):
             webhook = f"https://{webhook}"
+
         secret = os.environ.get("WEBHOOK_SECRET", "").strip() or None
+        generated = False
+        if secret and re.search(r"[^A-Za-z0-9_-]", secret):
+            raise SystemExit(
+                "WEBHOOK_SECRET may only contain A-Z, a-z, 0-9, '_' and '-' "
+                "(Telegram rejects anything else)"
+            )
+        if webhook and secret is None:
+            # An unset secret would let anyone who guesses the URL inject
+            # updates. Telegram accepts a per-process secret, and we register it
+            # on every start, so generating one keeps single-instance deploys
+            # secure with no configuration.
+            secret = secrets.token_urlsafe(32)
+            generated = True
 
         return cls(
             token=token,
@@ -164,6 +185,7 @@ class Config:
             webhook_secret=secret,
             port=int(os.environ.get("PORT", "8080")),
             log_level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+            webhook_secret_generated=generated,
         )
 
 
@@ -893,7 +915,9 @@ async def run_webhook(app: Application, config: Config) -> None:
     if not config.webhook_url:
         raise RuntimeError("WEBHOOK_URL is not set")
     secret = config.webhook_secret
-    if secret is None:
+    if config.webhook_secret_generated:
+        LOGGER.info("WEBHOOK_SECRET is not set; using a secret generated at startup")
+    elif secret is None:
         LOGGER.warning(
             "WEBHOOK_SECRET is not set; anyone who guesses the webhook URL "
             "could inject fake updates"

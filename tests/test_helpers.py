@@ -129,11 +129,48 @@ def test_config_from_env_parses_defaults_and_allowed_chats(
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", " 123:abc ")
     monkeypatch.setenv("ALLOWED_CHAT_IDS", "-1001, -1002")
     monkeypatch.setenv("WEBHOOK_URL", "kazesu-bot.onrender.com/")
+    monkeypatch.delenv("WEBHOOK_SECRET", raising=False)
+    monkeypatch.delenv("RENDER_EXTERNAL_URL", raising=False)
     config = bot.Config.from_env()
     assert config.token == "123:abc"
     assert config.allowed_chat_ids == (-1001, -1002)
     assert config.webhook_url == "https://kazesu-bot.onrender.com"
     assert config.repo == "KazeSU/KazeSU"
+    assert config.webhook_secret
+    assert config.webhook_secret_generated is True
+
+
+def test_config_uses_render_external_url_for_webhook(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+    monkeypatch.delenv("WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("WEBHOOK_SECRET", raising=False)
+    monkeypatch.setenv("RENDER_EXTERNAL_URL", "https://kazesu-bot.onrender.com/")
+    config = bot.Config.from_env()
+    assert config.webhook_url == "https://kazesu-bot.onrender.com"
+    assert config.port == 8080
+
+
+def test_config_keeps_an_explicit_webhook_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+    monkeypatch.setenv("WEBHOOK_URL", "https://example.test")
+    monkeypatch.setenv("WEBHOOK_SECRET", "fixed_secret-123")
+    config = bot.Config.from_env()
+    assert config.webhook_secret == "fixed_secret-123"
+    assert config.webhook_secret_generated is False
+
+
+def test_config_rejects_an_invalid_webhook_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:abc")
+    monkeypatch.setenv("WEBHOOK_URL", "https://example.test")
+    monkeypatch.setenv("WEBHOOK_SECRET", "not valid!")
+    with pytest.raises(SystemExit):
+        bot.Config.from_env()
 
 
 def test_config_requires_a_token(monkeypatch: pytest.MonkeyPatch) -> None:
