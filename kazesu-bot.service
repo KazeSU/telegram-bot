@@ -1,0 +1,30 @@
+[Unit]
+Description=KazeSU Telegram companion bot
+Documentation=https://github.com/KazeSU/telegram-bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kazesu
+Group=kazesu
+WorkingDirectory=/opt/kazesu-bot
+EnvironmentFile=/etc/kazesu-bot.env
+ExecStart=/opt/kazesu-bot/.venv/bin/python /opt/kazesu-bot/kazesu_bot.py
+Restart=always
+RestartSec=5
+# Long polling needs no inbound port; these keep the service contained.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target
